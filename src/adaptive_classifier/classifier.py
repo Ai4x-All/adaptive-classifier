@@ -12,6 +12,7 @@ import json
 from sklearn.cluster import KMeans
 from huggingface_hub import ModelHubMixin, hf_hub_download
 import os
+from .config_loader import load_config
 import shutil
 
 from .models import Example, AdaptiveHead, ModelConfig
@@ -32,6 +33,7 @@ class AdaptiveClassifier(ModelHubMixin):
         model_name: str,
         device: Optional[str] = None,
         config: Optional[Dict[str, Any]] = None,
+        db_config: Optional[Dict[str, Any]] = None,
         seed: int = 42  # Add seed parameter
     ):
         """Initialize the adaptive classifier.
@@ -44,6 +46,7 @@ class AdaptiveClassifier(ModelHubMixin):
         # Set seed for initialization
         torch.manual_seed(seed)
         self.config = ModelConfig(config)
+        self.db_config = self._resolve_db_config(db_config)
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         
         # Initialize transformer model and tokenizer
@@ -54,7 +57,8 @@ class AdaptiveClassifier(ModelHubMixin):
         self.embedding_dim = self.model.config.hidden_size
         self.memory = PrototypeMemory(
             self.embedding_dim,
-            config=self.config
+            config=self.config,
+            db_config = self.db_config
         )
         
         # Initialize adaptive head
@@ -1030,6 +1034,38 @@ This model:
                     break
         
         self.train_steps += 1
+
+    def _resolve_db_config(self, db_config_param: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        根据传入的参数或从配置文件加载来确定并返回数据库配置。
+        如果无法确定有效的数据库配置，则抛出异常。
+        """
+        if db_config_param is not None:
+            # 如果 db_config 已传入，则直接使用
+            logger.debug(f"使用传入的 db_config 参数初始化，主机: {db_config_param.get('host', 'N/A')}")
+            return db_config_param
+        else:
+            # 如果没有传入 db_config，则尝试从配置文件加载
+            logger.info("db_config 参数未提供，尝试从项目根目录的 config.yaml 加载数据库配置。")
+            try:
+                app_config = load_config() # 调用本地的 config_loader
+                loaded_db_config = app_config.get('database')
+                if not loaded_db_config:
+                    # 如果配置文件存在但缺少 'database' 段
+                    raise ValueError("配置文件 'config.yaml' 中未找到 'database' 配置段。请检查配置。")
+                logger.info(f"成功从 config.yaml 加载数据库配置，主机: {loaded_db_config.get('host', 'N/A')}")
+                return loaded_db_config
+            except FileNotFoundError as e:
+                # 如果 config.yaml 未找到，或者 find_project_root 失败
+                error_msg = f"无法加载数据库配置：config.yaml 未找到或项目根目录未标记 (如 pyproject.toml)。错误详情: {e}"
+                logger.error(error_msg)
+                # 由于数据库配置是必需的，这里必须抛出异常
+                raise RuntimeError(error_msg) from e # 使用 from e 保留原始异常链
+            except Exception as e:
+                # 捕获其他可能的加载或解析错误
+                error_msg = f"加载或解析配置文件时发生未知错误: {e}"
+                logger.error(error_msg)
+                raise RuntimeError(error_msg) from e
     
     def _update_adaptive_head(self):
         """Update adaptive head for new classes."""
