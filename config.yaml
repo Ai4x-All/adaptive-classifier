@@ -1,0 +1,6 @@
+database:
+  host: your-host
+  dbname: yout-db
+  user: your-user
+  password: your-pwd
+  port: your-port
