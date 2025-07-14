@@ -2,7 +2,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from transformers import AutoModel, AutoTokenizer
+from dotenv import load_dotenv
+from openai import OpenAI
+# from transformers import AutoModel, AutoTokenizer
 from typing import List, Dict, Optional, Tuple, Any, Set, Union
 import logging
 import copy
@@ -22,6 +24,17 @@ from .strategic import (
     StrategicCostFunction, CostFunctionFactory, StrategicOptimizer, StrategicEvaluator
 )
 
+# Load environment variables from .env file
+load_dotenv()
+
+# Read from environment variables
+KC_EMBEDDING_BASE_URL = os.getenv("KC_EMBEDDING_BASE_URL")
+KC_EMBEDDING_API_KEY = os.getenv("KC_EMBEDDING_API_KEY")
+# KC_EMBEDDING_MODEL_NAME = os.getenv("KC_EMBEDDING_MODEL_NAME")
+
+print(KC_EMBEDDING_API_KEY, KC_EMBEDDING_BASE_URL)
+
+openai_client = OpenAI(base_url=KC_EMBEDDING_BASE_URL, api_key=KC_EMBEDDING_API_KEY)
 
 logger = logging.getLogger(__name__)
 
@@ -50,11 +63,17 @@ class AdaptiveClassifier(ModelHubMixin):
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         
         # Initialize transformer model and tokenizer
-        self.model = AutoModel.from_pretrained(model_name).to(self.device)
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        # self.model = AutoModel.from_pretrained(model_name).to(self.device)
+        # self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+
+        # Initialize OpenAI client
+        self.openai_client = openai_client
+        self.model_name = model_name
         
         # Initialize memory system
-        self.embedding_dim = self.model.config.hidden_size
+        # self.embedding_dim = self.model.config.hidden_size
+        self.embedding_dim = self._get_embedding_dimension(model_name)
+        print(f"Embedding dimension for {model_name}: {self.embedding_dim}")
         self.memory = PrototypeMemory(
             self.embedding_dim,
             config=self.config,
@@ -78,7 +97,7 @@ class AdaptiveClassifier(ModelHubMixin):
         
         # Initialize strategic components if enabled
         if self.config.enable_strategic_mode:
-            self._initialize_strategic_components()
+            self._initialize_strategic_components()    
     
     def add_examples(self, texts: List[str], labels: List[str]):
         """Add new examples with special handling for new classes."""
@@ -413,7 +432,7 @@ class AdaptiveClassifier(ModelHubMixin):
 
         # Save configuration and metadata
         config_dict = {
-            'model_name': self.model.config._name_or_path,
+            'model_name': self.model_name,
             'embedding_dim': self.embedding_dim,
             'label_to_id': self.label_to_id,
             'id_to_label': {str(k): v for k, v in self.id_to_label.items()},
@@ -471,6 +490,20 @@ class AdaptiveClassifier(ModelHubMixin):
         }
 
         return saved_files, {}
+
+    def _get_embedding_dimension(self, model_name: str) -> int:
+        """通过实际调用OpenAI embedding API来获取指定模型的embedding维度。
+        """
+        try:
+            response = openai_client.embeddings.create(
+                model=model_name,
+                input="_"
+            )
+            embedding_dim = len(response.data[0].embedding)
+            return embedding_dim
+        except Exception as e:
+            logger.error(f"Failure in getting embedding dimension for {model_name}: {e}; check model name and model api configs in .env.")
+            raise e
 
     @classmethod
     def _from_pretrained(
@@ -631,7 +664,7 @@ You can install it with `pip install adaptive-classifier`.
 
 ## Model Details
 
-- Base Model: {self.model.config._name_or_path}
+- Base Model: {self.model_name}
 - Number of Classes: {stats['num_classes']}
 - Total Examples: {stats['total_examples']}
 - Embedding Dimension: {self.embedding_dim}
@@ -758,42 +791,26 @@ This model:
         ).to(self.device)
 
     def _get_embeddings(self, texts: List[str]) -> List[torch.Tensor]:
-        """Get embeddings for input texts with improved caching."""
-        # Sort texts for consistent tokenization
-        sorted_indices = list(range(len(texts)))
-        sorted_indices.sort(key=lambda i: texts[i])
-        sorted_texts = [texts[i] for i in sorted_indices]
+        """Get embeddings for input texts using OpenAI's Embedding API."""
+        if not texts:
+            return []
         
-        # Temporarily set model to eval mode
-        was_training = self.model.training
-        self.model.eval()
+        # Get embeddings using OpenAI
+        response = self.openai_client.embeddings.create(
+            model=self.model_name,
+            input=texts
+        )
         
-        # Get embeddings
-        with torch.no_grad():
-            inputs = self.tokenizer(
-                sorted_texts,
-                max_length=self.config.max_length,
-                truncation=True,
-                padding=True,
-                return_tensors="pt"
-            ).to(self.device)
-            
-            outputs = self.model(**inputs)
-            embeddings = outputs.last_hidden_state[:, 0, :]
-            
-            # Normalize embeddings
-            embeddings = F.normalize(embeddings, p=2, dim=1)
+        embeddings = []
+        for data in response.data:
+            embeddings.append(
+                torch.tensor(data.embedding, dtype=torch.float32)
+            )
         
-        # Restore original training mode
-        if was_training:
-            self.model.train()
+        # Normalize embeddings
+        embeddings = [F.normalize(e, p=2, dim=0) for e in embeddings]
         
-        # Restore original order
-        original_order = [0] * len(texts)
-        for i, idx in enumerate(sorted_indices):
-            original_order[idx] = embeddings[i].cpu()
-        
-        return original_order
+        return embeddings
 
     def get_example_statistics(self) -> Dict[str, Any]:
         """Get statistics about stored examples and model state."""

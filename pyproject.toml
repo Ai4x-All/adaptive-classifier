@@ -1,12 +1,80 @@
 [build-system]
 requires = [
-    "setuptools>=64.0.0",
-    "wheel",
-    "packaging>=20.0",
-    "pip>=19.3.1",
+    "setuptools>=61.0", # setuptools 用于构建
+    "wheel",           # wheel 用于生成 .whl 包
+    # "packaging>=20.0", # setuptools 通常会处理其依赖，可以省略
+    # "pip>=19.3.1",     # 同上，build/setuptools 依赖的 pip 版本
 ]
 build-backend = "setuptools.build_meta"
 
+[project]
+name = "ai4x-adaptive-classifier" # 包的名称，pip install 时使用
+version = "0.1.0"             # 包的版本号，每次发布新版本时递增
+description = "A flexible classifier that can adapt to new classes and examples."
+readme = "README.md" # 指向你的 README 文件
+requires-python = ">=3.8" # 项目兼容的最低 Python 版本
+license = { text = "MIT License" } # 如果你有 LICENSE 文件，可以指向文件：file = "LICENSE"
+authors = [
+  { name = "Your Name", email = "your.email@example.com" }, # 请替换为你的名字和邮箱
+]
+keywords = ["classifier", "machine-learning", "adaptive-learning", "deep-learning", "nlp", "postgresql", "pgvector"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Development Status :: 3 - Alpha", # 根据项目成熟度调整
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+# 核心依赖 (install_requires) - 现在是直接在 [project] 下的数组
+dependencies = [
+    "datasets==4.0.0",
+    "faiss-cpu==1.11.0",
+    "huggingface-hub==0.33.1",
+    "numpy==2.3.1",
+    "openai==1.95.0",
+    "pandas==2.3.1",
+    "pgvector==0.4.1",
+    # psycopg[binary] 在这里需要特殊处理，直接写成字符串形式
+    "psycopg[binary]==3.2.9",
+    "python-dotenv==1.1.1",
+    "PyYAML==6.0.2",
+    "safetensors==0.5.3",
+    "scikit-learn==1.7.0",
+    "sentence-transformers==5.0.0",
+    "textdistance==4.6.3",
+    "torch==2.7.1",
+    "tqdm==4.67.1",
+    "transformers==4.53.0",
+]
+
+# 可选依赖（例如，开发、测试依赖）- 现在是直接在 [project] 下的内联表
+[project.optional-dependencies]
+dev = [
+    "pytest==8.4.1",       # 测试框架
+    "build",             # 构建包的工具
+    "twine",             # 上传包到 PyPI 的工具
+    "flake8",            # 代码风格检查
+    "mypy",              # 类型检查
+    "pre-commit",        # 自动化代码检查钩子
+    "psutil==5.9.0",     # 用于内存效率测试
+    # 其他开发工具...
+]
+# 如果你的项目有需要 GPU 支持的特定功能
+gpu = [
+    "torch[cuda]==2.7.1", # PyTorch 的 CUDA 版本
+    # "faiss-gpu>=1.7.0",   # 如果需要FAISS的GPU版本，请注释掉faiss-cpu并启用此行
+]
+
+# Pytest 配置 (如果你有 tests 目录和 pytest)
 [tool.pytest.ini_options]
 minversion = "7.0"
 addopts = "-ra -q"
@@ -16,3 +84,24 @@ filterwarnings = [
     "ignore::DeprecationWarning",
     "ignore::UserWarning",
 ]
+
+# ruff 配置 (可选，如果你使用 ruff 进行代码格式化和 linting)
+# [tool.ruff]
+# line-length = 120
+# target-version = "py38"
+# select = ["E", "F", "W", "I"] # 常见规则
+
+# ruff.isort 配置 (可选，如果 ruff 负责 import 排序)
+# [tool.ruff.isort]
+# known-first-party = ["adaptive_classifier"]
+
+# MyPy 配置 (可选，如果你使用 MyPy 进行静态类型检查)
+# [tool.mypy]
+# python_version = "3.8"
+# warn_unused_configs = true
+# warn_unused_ignores = true
+# warn_no_return = false
+# ignore_missing_imports = true
+# namespace_packages = true
+# explicit_package_bases = true
+# plugins = ["pydantic.mypy"]
